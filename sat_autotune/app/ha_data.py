@@ -10,6 +10,7 @@ from .const import ENT, ROOMS
 log = logging.getLogger("data")
 
 CHUNK_DAYS = 10
+CONS_PARAMS = None  # (min, max) m3/h uit de SAT-opties; gezet door de engine
 
 
 async def _history(ha, ids, a, b, attrs):
@@ -28,7 +29,7 @@ async def fetch(ha, tz, start_date, end_date, dhw=None):
     a = datetime(start_date.year, start_date.month, start_date.day, tzinfo=tz)
     b = datetime(end_date.year, end_date.month, end_date.day, tzinfo=tz) + timedelta(days=1)
 
-    plain_ids = [ENT[k] for k in ("flame", "flow", "starts", "manual", "person", "consumption_est")] + list(ROOMS.values())
+    plain_ids = [ENT[k] for k in ("flame", "flow", "starts", "manual", "person", "consumption_est", "modulation")] + list(ROOMS.values())
     if dhw:
         plain_ids.append(dhw)
     plain = await _history(ha, plain_ids, a, b, attrs=False)
@@ -76,6 +77,11 @@ async def fetch(ha, tz, start_date, end_date, dhw=None):
         "minimum_setpoint": m.attr_num_series(climp, "minimum_setpoint"),
         "gas_daily": full,
     }
+    if not data["consumption"] and CONS_PARAMS:
+        mod = m.num_series(p(ENT["modulation"]))
+        if mod:
+            data["consumption"] = m.derive_consumption(mod, *CONS_PARAMS)
+            log.debug("Verbruikssensor leeg; verbruik afgeleid uit modulatie")
     return data
 
 

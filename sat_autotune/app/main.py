@@ -95,6 +95,13 @@ class Engine:
             if not self.db.get("readonly_notified") == self.readonly_reason:
                 await self.push("SAT Autotune: alleen-lezen", f"Er wordt niets aangepast: {self.readonly_reason}")
                 self.db.set("readonly_notified", self.readonly_reason)
+        self.set_cons_params(self.db.last_snapshot() or {})
+        try:
+            cs = await self.ha.get_state(ENT["consumption_est"])
+            log.info("Verbruikssensor SAT: staat=%s, eenheid=%s; afgeleid uit modulatie met min/max %s",
+                     (cs or {}).get("state"), ((cs or {}).get("attributes") or {}).get("unit_of_measurement"), ha_data.CONS_PARAMS)
+        except Exception as e:
+            log.debug("Verbruikssensor lezen mislukt: %s", e)
         await self.ensure_killswitch()
         await self.ha.subscribe("mobile_app_notification_action", self.on_action)
 
@@ -120,6 +127,11 @@ class Engine:
             log.error("Melding versturen mislukt: %s", e)
 
     # ------------------------------------------------------------ opties
+    def set_cons_params(self, snap):
+        lo, hi = so.num(snap.get("minimum_consumption")), so.num(snap.get("maximum_consumption"))
+        if isinstance(lo, float) and isinstance(hi, float) and hi > lo:
+            ha_data.CONS_PARAMS = (lo, hi)
+
     def current_opts(self, snap):
         out = {}
         for key, cfgname in TUNABLE.items():

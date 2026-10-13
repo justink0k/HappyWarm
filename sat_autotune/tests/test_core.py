@@ -358,3 +358,12 @@ def test_incomplete_gas_days_ignored():
     assert list(g) == [date(2026, 10, 1)] and g[date(2026, 10, 1)] == pytest.approx(12.0)
     assert m.estimate_base_load_fallback({date(2026, 7, 1) + __import__("datetime").timedelta(days=i): 0.01 for i in range(20)}) is None
     assert m.estimate_base_load_fallback({date(2026, 7, 1) + __import__("datetime").timedelta(days=i): 0.09 for i in range(20)}) == pytest.approx(0.09)
+
+
+def test_derive_consumption_from_modulation():
+    c = m.derive_consumption([(0, 0.0), (10, 50.0), (20, 100.0), (30, 150.0)], 0.43, 2.4)
+    assert [round(v, 3) for _, v in c] == [0.43, 1.415, 2.4, 2.4]
+    data, a, b = synth_data(days=1)
+    data["consumption"] = m.derive_consumption([(t(a), 100.0)], 0.43, 2.4)
+    d = m.analyze(data, CFG, a, b, TZ)["days"][0]
+    assert d["boiler_m3"] == pytest.approx(4 * 0.25 * 2.4)

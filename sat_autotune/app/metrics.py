@@ -192,6 +192,11 @@ def estimate_base_load(daily_gas, daily_degree_days, max_gd=0.5):
     return statistics.median(vals) if len(vals) >= 5 else None
 
 
+def derive_consumption(modulation, lo, hi):
+    """Ketelverbruik (m3/h) uit de modulatie (%), zoals SAT het schat: min + (max - min) * modulatie."""
+    return [(t, lo + (hi - lo) * max(0.0, min(100.0, v)) / 100.0) for t, v in modulation]
+
+
 def score_dhw_candidate(cand, flame, a, b):
     """Gedrag van een kandidaat-sensor voor 'warm water actief' tegenover de vlam.
     Echt warm water: schakelt regelmatig, staat maar een klein deel van de tijd aan en de vlam brandt dan."""
