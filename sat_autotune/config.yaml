@@ -2,7 +2,7 @@ name: SAT Autotune
 version: "0.1.0"
 slug: sat_autotune
 description: Meet de prestaties van de cv-ketel en stelt SAT begrensd bij om gas te besparen
-url: https://github.com/Tr71/HappyWarm
+url: https://github.com/justink0k/HappyWarm
 arch:
   - amd64
   - aarch64
