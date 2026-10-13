@@ -356,4 +356,5 @@ def test_incomplete_gas_days_ignored():
     hourly = [(d0 + h * 3600, 0.5) for h in range(24)] + [(d0 + 86400 + h * 3600, 0.5) for h in range(5)]
     g = m.gas_per_day(hourly, TZ)
     assert list(g) == [date(2026, 10, 1)] and g[date(2026, 10, 1)] == pytest.approx(12.0)
-    assert m.estimate_base_load_fallback({date(2026, 7, 1) + __import__("datetime").timedelta(days=i): 0.05 for i in range(20)}) is None
+    assert m.estimate_base_load_fallback({date(2026, 7, 1) + __import__("datetime").timedelta(days=i): 0.01 for i in range(20)}) is None
+    assert m.estimate_base_load_fallback({date(2026, 7, 1) + __import__("datetime").timedelta(days=i): 0.09 for i in range(20)}) == pytest.approx(0.09)

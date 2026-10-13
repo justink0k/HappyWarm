@@ -214,7 +214,7 @@ def estimate_base_load_fallback(daily_gas, min_days=14):
     if len(vals) < min_days:
         return None
     v = vals[int(0.15 * (len(vals) - 1))]
-    return v if v >= 0.15 else None  # onder 0,15 m3/dag is geen echte basislast (data onvolledig?)
+    return v if v >= 0.02 else None  # vrijwel nul = geen betrouwbare schatting
 
 
 def analyze_day(data, cfg, d: date, tz: ZoneInfo, base_load):
