@@ -349,3 +349,11 @@ def test_dhw_candidate_scoring():
     assert not m.score_dhw_candidate(never, flame, d0, end)["ok"]
     no_flame = [(d0, 0)]
     assert not m.score_dhw_candidate(cand_dhw, no_flame, d0, end)["ok"]  # schakelt zonder vlam
+
+
+def test_incomplete_gas_days_ignored():
+    d0 = t(date(2026, 10, 1))
+    hourly = [(d0 + h * 3600, 0.5) for h in range(24)] + [(d0 + 86400 + h * 3600, 0.5) for h in range(5)]
+    g = m.gas_per_day(hourly, TZ)
+    assert list(g) == [date(2026, 10, 1)] and g[date(2026, 10, 1)] == pytest.approx(12.0)
+    assert m.estimate_base_load_fallback({date(2026, 7, 1) + __import__("datetime").timedelta(days=i): 0.05 for i in range(20)}) is None

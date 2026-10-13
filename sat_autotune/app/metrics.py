@@ -168,15 +168,17 @@ def day_bounds(d: date, tz: ZoneInfo):
     return a.timestamp(), b.timestamp()
 
 
-def gas_per_day(hourly, tz):
-    """hourly = [(start_ts, m3)] -> {date: m3} (alleen dagen met data)."""
-    out = {}
+def gas_per_day(hourly, tz, min_hours=20):
+    """hourly = [(start_ts, m3)] -> {date: m3}. Dagen met minder dan min_hours uurwaarden zijn onvolledig
+    (bijv. de eerste dag van de statistieken) en worden weggelaten, anders lijkt het verbruik veel te laag."""
+    out, hours = {}, {}
     for t, v in hourly:
         if v is None:
             continue
         d = datetime.fromtimestamp(t, tz).date()
         out[d] = out.get(d, 0.0) + v
-    return out
+        hours[d] = hours.get(d, 0) + 1
+    return {d: g for d, g in out.items() if hours[d] >= min_hours}
 
 
 def estimate_base_load(daily_gas, daily_degree_days, max_gd=0.5):
@@ -211,7 +213,8 @@ def estimate_base_load_fallback(daily_gas, min_days=14):
     vals = sorted(g for g in daily_gas.values() if g > 0)
     if len(vals) < min_days:
         return None
-    return vals[int(0.15 * (len(vals) - 1))]
+    v = vals[int(0.15 * (len(vals) - 1))]
+    return v if v >= 0.15 else None  # onder 0,15 m3/dag is geen echte basislast (data onvolledig?)
 
 
 def analyze_day(data, cfg, d: date, tz: ZoneInfo, base_load):

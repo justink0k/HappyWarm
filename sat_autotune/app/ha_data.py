@@ -56,6 +56,10 @@ async def fetch(ha, tz, start_date, end_date, dhw=None):
         st = st / 1000 if st > 1e11 else st
         hourly.append((float(st), row.get("change")))
 
+    full = m.gas_per_day(hourly, tz)
+    dropped = len({datetime.fromtimestamp(t, tz).date() for t, v in hourly if v is not None}) - len(full)
+    if dropped > 0:
+        log.info("Gas: %d dag(en) met onvolledige uurstatistieken genegeerd", dropped)
     data = {
         "outside": m.attr_num_series(climp, "outside_temperature"),
         "setpoint": m.attr_num_series(climp, "temperature"),
@@ -70,7 +74,7 @@ async def fetch(ha, tz, start_date, end_date, dhw=None):
         "consumption": m.num_series(p(ENT["consumption_est"])),
         "dhw": m.bool_series(p(dhw)) if dhw else None,
         "minimum_setpoint": m.attr_num_series(climp, "minimum_setpoint"),
-        "gas_daily": m.gas_per_day(hourly, tz),
+        "gas_daily": full,
     }
     return data
 
