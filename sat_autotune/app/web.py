@@ -57,9 +57,15 @@ async def index(request):
     if ac:
         days = max(0, (ac["eval_ts"] - __import__("time").time()) / 86400)
         status.append(f"Lopend experiment: {LABELS.get(ac['key'])} {ac['old']:g} → {ac['new']:g}, evaluatie over {days:.0f} dagen")
+    import time as _t
+    dry_end = None
+    if ph == "dry_run":
+        dry_end = datetime.fromtimestamp(eng.db.get("install_ts") + eng.cfg["dry_run_weeks"] * 7 * 86400, eng.tz).strftime("%d-%m-%Y")
     return web.Response(content_type="text/html", text=dashboard.page({
         "latest": latest, "history": hist, "changes": _fmt_changes(eng), "status": status,
-        "live": await _live(eng), "cfg": eng.cfg}))
+        "live": await _live(eng), "cfg": eng.cfg, "opts": eng.current_opts(eng.db.last_snapshot() or {}),
+        "active": await eng.active(), "dry_run_end": dry_end,
+        "opv": eng.db.get("opv_seen"), "dhw_found": bool(eng.dhw)}))
 
 
 async def start_web(eng):

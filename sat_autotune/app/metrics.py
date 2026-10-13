@@ -227,6 +227,24 @@ def analyze_day(data, cfg, d: date, tz: ZoneInfo, base_load):
     row["flow_below55_frac"] = sum(x for x, v in on if v < 55) / w if w else None
     row["flow_p95"] = weighted_quantile([(v, x) for x, v in on], 0.95)
 
+    # gasverdeling: ketelverbruik volgens SAT (m3/h) tijdens branden; warm water via de OTGW-sensor
+    cons, dhw = data.get("consumption") or [], data.get("dhw")
+    boiler = dhw_m3 = 0.0
+    if cons and flame:
+        series = [cons, flame] + ([dhw] if dhw else [])
+        for s_, e_, v in join(series, a, b):
+            if v[1] == 1:
+                part = v[0] * (e_ - s_) / 3600
+                boiler += part
+                if dhw and v[2] == 1:
+                    dhw_m3 += part
+        row["boiler_m3"] = boiler
+        row["dhw_m3"] = dhw_m3 if dhw else None
+        row["ch_m3"] = (boiler - dhw_m3) if dhw else None
+        row["other_m3"] = (gas - boiler) if gas is not None else None
+    else:
+        row["boiler_m3"] = row["dhw_m3"] = row["ch_m3"] = row["other_m3"] = None
+
     # PWM en continu branden
     pwm = data.get("pwm")
     if pwm:
@@ -336,6 +354,14 @@ def aggregate(days, cfg):
         "degree_days_total": allgd,
         "gas_total_m3": sum(r["gas_m3"] or 0 for r in days),
     }
+    split = [r for r in days if r.get("boiler_m3") is not None and r.get("gas_m3") is not None]
+    if split:
+        g = sum(r["gas_m3"] for r in split)
+        bo = sum(r["boiler_m3"] for r in split)
+        agg["split_gas_m3"] = g
+        agg["split_boiler_m3"] = bo
+        agg["split_dhw_m3"] = sum(r["dhw_m3"] or 0 for r in split) if any(r["dhw_m3"] is not None for r in split) else None
+        agg["split_other_m3"] = g - bo
     if not valid:
         return agg
     gd = sum(r["degree_days"] for r in valid)

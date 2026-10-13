@@ -23,12 +23,14 @@ async def _history(ha, ids, a, b, attrs):
     return res or {}
 
 
-async def fetch(ha, tz, start_date, end_date):
+async def fetch(ha, tz, start_date, end_date, dhw=None):
     """Alle benodigde reeksen voor start_date..end_date (inclusief), lokale dagen."""
     a = datetime(start_date.year, start_date.month, start_date.day, tzinfo=tz)
     b = datetime(end_date.year, end_date.month, end_date.day, tzinfo=tz) + timedelta(days=1)
 
-    plain_ids = [ENT[k] for k in ("flame", "flow", "starts", "manual", "person")] + list(ROOMS.values())
+    plain_ids = [ENT[k] for k in ("flame", "flow", "starts", "manual", "person", "consumption_est")] + list(ROOMS.values())
+    if dhw:
+        plain_ids.append(dhw)
     plain = await _history(ha, plain_ids, a, b, attrs=False)
 
     clim = []
@@ -65,12 +67,15 @@ async def fetch(ha, tz, start_date, end_date):
         "manual": m.bool_series(p(ENT["manual"])),
         "person": m.bool_series(p(ENT["person"]), true_values=("home",)),
         "rooms": {n: m.num_series(p(eid)) for n, eid in ROOMS.items()},
+        "consumption": m.num_series(p(ENT["consumption_est"])),
+        "dhw": m.bool_series(p(dhw)) if dhw else None,
+        "minimum_setpoint": m.attr_num_series(climp, "minimum_setpoint"),
         "gas_daily": m.gas_per_day(hourly, tz),
     }
     return data
 
 
-async def estimate_base_load(ha, tz, cfg, today, db):
+async def estimate_base_load(ha, tz, cfg, today, db, dhw=None):
     """Basislast voor warm water en koken (douchen/koken zit in dezelfde gasmeter).
     Gecachet voor 7 dagen; handmatige waarde in de configuratie wint."""
     if cfg.get("base_gas_m3_per_day"):
@@ -80,7 +85,7 @@ async def estimate_base_load(ha, tz, cfg, today, db):
         return cached["value"]
     start = today - timedelta(days=90)
     try:
-        data = await fetch(ha, tz, start, today - timedelta(days=1))
+        data = await fetch(ha, tz, start, today - timedelta(days=1), dhw)
     except Exception as e:
         log.warning("Basislast schatten mislukt: %s", e)
         return cached["value"] if cached else None
@@ -120,3 +125,19 @@ async def check_entities(ha):
         elif st.get("state") in ("unavailable", "unknown"):
             log.warning("Entiteit niet beschikbaar: %s (%s)", eid, st.get("state"))
     return missing
+
+
+DHW_TOKENS = ("dhw", "hot_water", "domestic", "tap_water", "warm_water")
+
+
+async def discover_dhw(ha, cfg):
+    """Zoek de OTGW-sensor die aangeeft dat de ketel warm water maakt. Retourneert (gekozen, kandidaten)."""
+    if cfg.get("entity_dhw"):
+        return cfg["entity_dhw"], [cfg["entity_dhw"]]
+    states = await ha.ws_call({"type": "get_states"})
+    cands = sorted(s["entity_id"] for s in states
+                   if s["entity_id"].startswith("binary_sensor.") and "otgw" in s["entity_id"]
+                   and any(t in s["entity_id"] for t in DHW_TOKENS))
+    pref = [c for c in cands if any(k in c for k in ("mode", "active", "enable", "burner", "flame"))]
+    pick = (pref or cands or [None])[0]
+    return pick, cands

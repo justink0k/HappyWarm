@@ -22,7 +22,7 @@ DEFAULTS = {
     "field_cycles": "cycles_per_hour",
     "field_opv": "",
     "field_selftest": "target_temperature_step",
-    "anthropic_api_key": "", "anthropic_model": "claude-sonnet-5-5",
+    "entity_dhw": "", "anthropic_api_key": "", "anthropic_model": "claude-sonnet-5-5",
 }
 
 

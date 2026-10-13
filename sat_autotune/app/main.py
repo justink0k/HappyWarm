@@ -28,6 +28,7 @@ class Engine:
         self.readonly_reason = None
         self.loc = {}
         self.status = []
+        self.dhw = None
 
     # ------------------------------------------------------------ opstarten
     async def start(self):
@@ -35,6 +36,13 @@ class Engine:
         self.tz = ZoneInfo(cfgws.get("time_zone", "Europe/Amsterdam"))
         if self.db.get("install_ts") is None:
             self.db.set("install_ts", time.time())
+        self.dhw, cands = await ha_data.discover_dhw(self.ha, self.cfg)
+        if self.dhw:
+            log.info("Warm-water-sensor: %s (kandidaten: %s)", self.dhw, cands)
+        else:
+            log.warning("Geen warm-water-sensor van de OTGW gevonden; verdeling verwarming/warm water is niet mogelijk. "
+                        "Zet 'entity_dhw' in de configuratie.")
+            self.status.append("Warm-water-sensor niet gevonden (entity_dhw instellen voor de gasverdeling)")
         missing = await ha_data.check_entities(self.ha)
         if missing:
             self.status.append(f"Ontbrekende entiteiten: {', '.join(missing)}")
@@ -121,10 +129,30 @@ class Engine:
                     await self.push("SAT Autotune", f"Je hebt {LABELS.get(ac['key'], field)} zelf gewijzigd; lopend experiment is gestopt.")
                 if key:
                     self.db.set("last_change_ts", time.time())
+        await self.watch_opv()
         if prev != snap:
             self.db.add_snapshot(snap)
         self.db.set("own_write", None)
         return snap
+
+    async def watch_opv(self):
+        """OPV (minimum_setpoint) staat niet in de opties maar wel als attribuut van de SAT-thermostaat.
+        Alleen meekijken: wijzigingen (ook handmatig via Herconfigureren) komen in het logboek."""
+        try:
+            st = await self.ha.get_state(ENT["climate"])
+            v = so.num((st or {}).get("attributes", {}).get("minimum_setpoint"))
+        except Exception as e:
+            log.debug("OPV lezen mislukt: %s", e)
+            return
+        if not isinstance(v, float):
+            return
+        prev = self.db.get("opv_seen")
+        if prev is not None and abs(prev - v) > 1e-6:
+            log.info("OPV (minimum_setpoint) gewijzigd: %s -> %s", prev, v)
+            self.db.add_change(ts=time.time(), key="opv", field="minimum_setpoint", old=prev, new=v, source="extern",
+                               reason="OPV gewijzigd (herconfiguratie of herkalibratie); alleen gelogd",
+                               status="extern", eval_ts=None, baseline=None, result=None)
+        self.db.set("opv_seen", v)
 
     async def apply(self, key, new, reason, source="auto"):
         field = self.cfg[TUNABLE[key]]
@@ -138,8 +166,8 @@ class Engine:
     # ------------------------------------------------------------ analyse
     async def analysis(self, start, end):
         today = datetime.now(self.tz).date()
-        base = await ha_data.estimate_base_load(self.ha, self.tz, self.cfg, today, self.db)
-        data = await ha_data.fetch(self.ha, self.tz, start, end)
+        base = await ha_data.estimate_base_load(self.ha, self.tz, self.cfg, today, self.db, self.dhw)
+        data = await ha_data.fetch(self.ha, self.tz, start, end, self.dhw)
         return m.analyze(data, self.cfg, start, end, self.tz, base), data
 
     async def window(self, days):
@@ -265,7 +293,7 @@ class Engine:
             return
         now = time.time()
         # Comfortbewaking (direct terugdraaien)
-        data = await ha_data.fetch(self.ha, self.tz, (datetime.now(self.tz) - timedelta(hours=6)).date(), datetime.now(self.tz).date())
+        data = await ha_data.fetch(self.ha, self.tz, (datetime.now(self.tz) - timedelta(hours=6)).date(), datetime.now(self.tz).date(), self.dhw)
         a, b = now - 6 * 3600, now
         lim, mx = self.cfg["comfort_limit_c"], self.cfg["comfort_max_hours"] * 3600
         for room in self.cfg["comfort_monitor_rooms"]:

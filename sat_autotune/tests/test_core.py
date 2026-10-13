@@ -305,3 +305,29 @@ def test_dashboard_renders():
     h = dashboard.page({"latest": rep, "history": [rep, rep], "changes": ch, "status": ["ok"], "live": {"vlam": "off"}, "cfg": CFG})
     assert "Gas per graaddag" in h and "<svg" in h and "Uitleg hier" in h
     assert "Nog geen rapport" in dashboard.page({"latest": None, "history": [], "changes": [], "status": [], "live": {}, "cfg": CFG})
+
+
+def test_gas_split_and_opv_labels():
+    data, a, b = synth_data(days=2)
+    d0 = t(a)
+    data["consumption"] = [(d0, 1.2)]          # m3/h tijdens brand
+    data["dhw"] = [(d0, 0), (d0 + 6 * 3600, 1), (d0 + 6 * 3600 + 900, 0)]  # eerste brand (15 min) is warm water
+    an = m.analyze(data, CFG, a, b, TZ)
+    d = an["days"][0]
+    assert d["boiler_m3"] == pytest.approx(4 * 0.25 * 1.2)      # 4 branden x 15 min x 1,2 m3/h
+    assert d["dhw_m3"] == pytest.approx(0.25 * 1.2)
+    assert d["ch_m3"] == pytest.approx(3 * 0.25 * 1.2)
+    assert an["agg"]["split_dhw_m3"] == pytest.approx(0.3)
+    data["dhw"] = None
+    assert m.analyze(data, CFG, a, b, TZ)["days"][0]["dhw_m3"] is None
+
+
+def test_dashboard_with_split_and_opv():
+    data, a, b = synth_data(days=3)
+    d0 = t(a)
+    data["consumption"] = [(d0, 1.2)]
+    data["dhw"] = [(d0, 0), (d0 + 6 * 3600, 1), (d0 + 6 * 3600 + 900, 0)]
+    an = m.analyze(data, CFG, a, b, TZ, base_load=2.0)
+    rep = {"an": an, "text": "x", "cmp_pct": None, "proposal": None, "phase": "live"}
+    h = dashboard.page({"latest": rep, "history": [rep], "changes": [], "status": [], "live": {}, "cfg": CFG, "opts": {}, "opv": 45.0, "active": True})
+    assert "Waar blijft je gas" in h and "OPV staat op 45" in h and "warm water" in h
