@@ -47,6 +47,10 @@ class Engine:
             try:
                 snap, self.loc, _ = await so.read_all(self.api, self.entry_id)
                 self.db.set("opts_known", True)
+                if self.cfg["field_opv"] and self.cfg["field_opv"] not in snap:
+                    log.warning("SAT-optie '%s' (OPV) bestaat niet in deze SAT-versie; OPV wordt niet aangepast",
+                                self.cfg["field_opv"])
+                    self.cfg["field_opv"] = ""
                 problems = so.check_compat(self.cfg, snap, so.read_sat_version())
                 if problems:
                     self.readonly_reason = "; ".join(problems)

@@ -57,6 +57,21 @@ def test_analyze_basics():
     assert agg["starts_per_day"] == pytest.approx(30, abs=1)
 
 
+def test_normal_workday_away_does_not_invalidate():
+    data, a, b = synth_data(days=2)
+    d0 = t(a)
+    data["person"] = [(d0, 1), (d0 + 8 * 3600, 0), (d0 + 17 * 3600, 1)]  # 9 uur weg = 37%
+    an = m.analyze(data, CFG, a, b, TZ)
+    assert an["days"][0]["valid"]
+
+
+def test_base_load_fallback():
+    from datetime import timedelta
+    gas = {date(2026, 7, 1) + timedelta(days=i): 1.0 + i * 0.1 for i in range(40)}
+    assert m.estimate_base_load_fallback(gas) == pytest.approx(1.5, abs=0.2)
+    assert m.estimate_base_load_fallback({date(2026, 7, 1): 1.0}) is None
+
+
 def test_away_and_few_degree_days_invalid():
     data, a, b = synth_data(days=3)
     data["person"] = [(t(a), 0)]  # hele tijd weg

@@ -93,6 +93,12 @@ async def estimate_base_load(ha, tz, cfg, today, db):
             gd[d] = max(0.0, cfg["degree_day_base"] - avg)
         d += timedelta(days=1)
     val = m.estimate_base_load(data["gas_daily"], gd)
+    log.info("Basislast-schatting: %d dagen met gasdata, %d met buitentemperatuur, %d zonder stookbehoefte",
+             len(data["gas_daily"]), len(gd), sum(1 for d in gd if gd[d] <= 0.5))
+    if val is None:
+        val = m.estimate_base_load_fallback(data["gas_daily"])
+        if val is not None:
+            log.warning("Basislast grof geschat op %.2f m3/dag (15e percentiel van het dagverbruik)", val)
     if val is not None:
         db.set("base_load", {"day": today.toordinal(), "value": val})
         log.info("Basislast warm water/koken geschat op %.2f m3/dag", val)

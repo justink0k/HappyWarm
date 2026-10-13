@@ -190,6 +190,14 @@ def estimate_base_load(daily_gas, daily_degree_days, max_gd=0.5):
     return statistics.median(vals) if len(vals) >= 5 else None
 
 
+def estimate_base_load_fallback(daily_gas, min_days=30):
+    """Grove basislast als er geen buitentemperatuur-historie is: 15e percentiel van het dagverbruik."""
+    vals = sorted(g for g in daily_gas.values() if g > 0)
+    if len(vals) < min_days:
+        return None
+    return vals[int(0.15 * (len(vals) - 1))]
+
+
 def analyze_day(data, cfg, d: date, tz: ZoneInfo, base_load):
     a, b = day_bounds(d, tz)
     row = {"date": d.isoformat()}
@@ -232,16 +240,22 @@ def analyze_day(data, cfg, d: date, tz: ZoneInfo, base_load):
     row["burn_min"] = burn_s / 60
 
     # afwezigheid / handmatig
-    away = 0.0
+    # Een dag telt als 'afwezig' bij preset Away (> max_away_fraction) of als je vrijwel de hele
+    # dag weg bent (> max_person_away_fraction). Gewoon een werkdag buiten de deur telt niet.
     person = data.get("person")
+    person_away = 0.0
     if person:
         kn = sum(e - s for s, e, _ in segments(person, a, b))
-        away = max(away, dur_where(person, a, b, lambda v: v == 0) / kn if kn else 0.0)
+        person_away = dur_where(person, a, b, lambda v: v == 0) / kn if kn else 0.0
+    preset_away = 0.0
     preset = data.get("preset")
     if preset:
         kn = sum(e - s for s, e, _ in segments(preset, a, b))
-        away = max(away, dur_where(preset, a, b, lambda v: v == "away") / kn if kn else 0.0)
+        preset_away = dur_where(preset, a, b, lambda v: v == "away") / kn if kn else 0.0
+    away = max(person_away, preset_away)
     row["away_frac"] = away
+    row["person_away_frac"] = person_away
+    is_away_day = preset_away > cfg["max_away_fraction"] or person_away > cfg.get("max_person_away_fraction", 0.75)
     man = data.get("manual")
     row["manual_frac"] = (dur_where(man, a, b, lambda v: v == 1) / (b - a)) if man else 0.0
 
@@ -286,7 +300,7 @@ def analyze_day(data, cfg, d: date, tz: ZoneInfo, base_load):
         reasons.append("te weinig graaddagen")
     if gas is None:
         reasons.append("geen gasdata")
-    if away > cfg["max_away_fraction"]:
+    if is_away_day:
         reasons.append("veel afwezig")
     if row["manual_frac"] > cfg["max_away_fraction"]:
         reasons.append("handmatige stand")

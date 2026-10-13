@@ -8,7 +8,7 @@ DEFAULTS = {
     "degree_day_base": 18.0, "base_gas_m3_per_day": 0.0,
     "report_weekday": "mon", "report_time": "07:00",
     "dry_run_weeks": 4, "wait_days": 14, "min_valid_days": 7,
-    "min_degree_days_per_day": 5.0, "max_away_fraction": 0.25,
+    "min_degree_days_per_day": 5.0, "max_away_fraction": 0.25, "max_person_away_fraction": 0.75,
     "min_improvement_pct": 2.0, "max_starts_increase_pct": 20.0,
     "quiet_start": "22:00", "quiet_end": "07:00",
     "comfort_monitor_rooms": ["woonkamer", "kantoor"],
@@ -20,7 +20,7 @@ DEFAULTS = {
     "field_coef": "heating_curve_coefficient",
     "field_max_setpoint": "maximum_setpoint",
     "field_cycles": "cycles_per_hour",
-    "field_opv": "overshoot_protection_value",
+    "field_opv": "",
     "field_selftest": "target_temperature_step",
     "anthropic_api_key": "", "anthropic_model": "claude-sonnet-5-5",
 }

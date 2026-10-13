@@ -1,5 +1,5 @@
 name: SAT Autotune
-version: "0.1.2"
+version: "0.1.3"
 slug: sat_autotune
 description: Meet de prestaties van de cv-ketel en stelt SAT begrensd bij om gas te besparen
 url: https://github.com/justink0k/HappyWarm
@@ -29,6 +29,7 @@ options:
   min_valid_days: 7
   min_degree_days_per_day: 5.0
   max_away_fraction: 0.25
+  max_person_away_fraction: 0.75
   min_improvement_pct: 2.0
   max_starts_increase_pct: 20.0
   quiet_start: "22:00"
@@ -52,7 +53,7 @@ options:
   field_coef: heating_curve_coefficient
   field_max_setpoint: maximum_setpoint
   field_cycles: cycles_per_hour
-  field_opv: overshoot_protection_value
+  field_opv: ""
   field_selftest: target_temperature_step
   anthropic_api_key: ""
   anthropic_model: claude-sonnet-5-5
@@ -69,6 +70,7 @@ schema:
   min_valid_days: int
   min_degree_days_per_day: float
   max_away_fraction: float
+  max_person_away_fraction: float
   min_improvement_pct: float
   max_starts_increase_pct: float
   quiet_start: str
@@ -91,7 +93,7 @@ schema:
   field_coef: str
   field_max_setpoint: str
   field_cycles: str
-  field_opv: str
+  field_opv: str?
   field_selftest: str
   anthropic_api_key: password?
   anthropic_model: str
