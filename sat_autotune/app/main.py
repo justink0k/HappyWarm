@@ -50,6 +50,9 @@ class Engine:
                 problems = so.check_compat(self.cfg, snap, so.read_sat_version())
                 if problems:
                     self.readonly_reason = "; ".join(problems)
+                    log.error("Beschikbare SAT-velden per stap: %s",
+                              {k: sorted(n for n, st in self.loc.items() if st == k) for k in set(self.loc.values())})
+                    log.error("Huidige waarden: %s", {k: v for k, v in sorted(snap.items())})
                 await self.sync_snapshot(snap)
             except Exception as e:
                 self.readonly_reason = f"SAT-opties niet te lezen: {e}"
