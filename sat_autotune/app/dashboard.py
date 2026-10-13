@@ -478,6 +478,8 @@ def page(ctx):
     labels = [d["date"][8:10] + "/" + d["date"][5:7] for d in days]
     nl = lambda v, d=1: _nl(v, d)  # noqa: E731
     tiles = ""
+    outs = [d["avg_out"] for d in days if d.get("avg_out") is not None]
+    avg_out = sum(outs) / len(outs) if outs else None
     if agg:
         tiles = "".join([
             tile("Gas per graaddag", f'{_nl(agg.get("gas_per_gd"), 3)} <small>m³</small>', "alleen verwarming", cmp_pct,
@@ -488,6 +490,8 @@ def page(ctx):
                  spark_html=spark([d["starts"] for d in days], "--s3")),
             tile("Aanvoer", f'{nl(agg.get("flow_mean"), 0)} <small>°C</small>', f"{nl(agg.get('pct_flow_below55'), 0)}% onder 55 °C",
                  spark_html=spark([d["flow_mean"] for d in days], "--s2")),
+            tile("Buitentemperatuur", f'{nl(avg_out)} <small>°C</small>', f"laagste dag {nl(min(outs))} · hoogste {nl(max(outs))}" if outs else "",
+                 spark_html=spark([d["avg_out"] for d in days], "--s2")),
             tile("Vergelijkbare dagen", f'{agg.get("valid_days", 0)} <small>van {agg.get("days_total", 0)}</small>', f"minimaal {cfg['min_valid_days']} nodig"),
         ])
 
@@ -498,6 +502,10 @@ def page(ctx):
     gas_chart = bar_chart([d["gas_m3"] for d in days], labels,
                           [tip_day(d, f"{_nl(d['gas_m3'], 2)} m³ gas, {_nl(d['degree_days'])} graaddagen") for d in days], "--s1",
                           ref=an.get("base_load_m3_per_day"), ref_label="basislast douchen/koken")
+    thr = cfg["degree_day_base"] - cfg["min_degree_days_per_day"]
+    out_chart = line_chart([d["avg_out"] for d in days], labels,
+                           [tip_day(d, f"gemiddeld {_nl(d['avg_out'])} °C buiten") for d in days], "--s2",
+                           ref=thr, ref_label=f"onder {_nl(thr, 0)} °C telt een dag mee")
     gd_chart = bar_chart([d["degree_days"] for d in days], labels,
                          [tip_day(d, f"{_nl(d['degree_days'])} graaddagen, gemiddeld {_nl(d['avg_out'])} °C buiten") for d in days], "--s2")
     starts_chart = bar_chart([d["starts"] for d in days], labels,
@@ -562,6 +570,7 @@ def page(ctx):
 <div class=card><h3>Gasverbruik per dag</h3><p class=cap>m³, hele huis. De stippellijn is de schatting voor douchen en koken.</p>{gas_chart}</div>
 <div class=card><h3>Gas tegenover kou</h3><p class=cap>Verwarmingsgas (m³) per graaddag. Dichter bij de lijn = voorspelbaarder; lager = zuiniger.</p>{scatter}</div>
 <div class=card><h3>Waar blijft je gas?</h3><p class=cap>Verdeling per dag (m³): verwarming, warm water en koken. Schatting uit het ketelverbruik van SAT.</p>{split_chart}</div>
+<div class=card><h3>Buitentemperatuur</h3><p class=cap>Daggemiddelde in °C (de waarde die SAT gebruikt). Alleen dagen onder de stippellijn zijn koud genoeg om te vergelijken.</p>{out_chart}</div>
 <div class=card><h3>Graaddagen per dag</h3><p class=cap>Hoe koud het was (stookgrens {_nl(cfg['degree_day_base'], 0)} °C).</p>{gd_chart}</div>
 <div class=card><h3>Aanvoertemperatuur</h3><p class=cap>Gemiddeld tijdens branden. Onder de stippellijn condenseert de ketel.</p>{flow_chart}</div>
 <div class=card><h3>Ketelstarts per dag</h3><p class=cap>Minder starts met langere branden is rustiger.</p>{starts_chart}</div>

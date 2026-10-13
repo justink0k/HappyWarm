@@ -33,6 +33,12 @@ async def _live(eng):
             st = await eng.ha.get_state(eid)
             if st:
                 live[label] = st["state"] + unit
+        cl = await eng.ha.get_state(ENT["climate"])
+        a = (cl or {}).get("attributes", {})
+        if a.get("outside_temperature") is not None:
+            live["buiten"] = f"{float(a['outside_temperature']):.1f}".replace(".", ",") + " °C"
+        if a.get("temperature") is not None:
+            live["setpoint SAT"] = f"{float(a['temperature']):.1f}".replace(".", ",") + " °C"
         for n, eid in ROOMS.items():
             st = await eng.ha.get_state(eid)
             if st:
