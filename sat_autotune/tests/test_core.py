@@ -331,3 +331,21 @@ def test_dashboard_with_split_and_opv():
     rep = {"an": an, "text": "x", "cmp_pct": None, "proposal": None, "phase": "live"}
     h = dashboard.page({"latest": rep, "history": [rep], "changes": [], "status": [], "live": {}, "cfg": CFG, "opts": {}, "opv": 45.0, "active": True})
     assert "Waar blijft je gas" in h and "OPV staat op 45" in h and "warm water" in h
+
+
+def test_dhw_candidate_scoring():
+    d0 = 0.0
+    flame = [(d0, 0)]
+    cand_dhw = [(d0, 0)]
+    for k in range(6):  # korte warm-water-brandjes
+        st = d0 + k * 10000
+        flame += [(st, 1), (st + 600, 0)]
+        cand_dhw += [(st, 1), (st + 600, 0)]
+    end = d0 + 60000
+    always_on = [(d0, 1)]
+    never = [(d0, 0)]
+    assert m.score_dhw_candidate(cand_dhw, flame, d0, end)["ok"]
+    assert not m.score_dhw_candidate(always_on, flame, d0, end)["ok"]   # bijv. *_enable
+    assert not m.score_dhw_candidate(never, flame, d0, end)["ok"]
+    no_flame = [(d0, 0)]
+    assert not m.score_dhw_candidate(cand_dhw, no_flame, d0, end)["ok"]  # schakelt zonder vlam

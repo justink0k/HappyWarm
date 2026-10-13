@@ -190,7 +190,23 @@ def estimate_base_load(daily_gas, daily_degree_days, max_gd=0.5):
     return statistics.median(vals) if len(vals) >= 5 else None
 
 
-def estimate_base_load_fallback(daily_gas, min_days=30):
+def score_dhw_candidate(cand, flame, a, b):
+    """Gedrag van een kandidaat-sensor voor 'warm water actief' tegenover de vlam.
+    Echt warm water: schakelt regelmatig, staat maar een klein deel van de tijd aan en de vlam brandt dan."""
+    segs = segments(cand, a, b)
+    if not segs:
+        return {"toggles": 0, "frac_on": None, "p_flame": None, "ok": False}
+    tot = sum(e - s for s, e, _ in segs)
+    on = sum(e - s for s, e, v in segs if v == 1)
+    toggles = sum(1 for (_, _, v1), (_, _, v2) in zip(segs, segs[1:]) if v1 != v2)
+    both = sum(e - s for s, e, v in join([cand, flame], a, b) if v[0] == 1 and v[1] == 1) if flame else 0
+    frac = on / tot if tot else None
+    p_flame = both / on if on else None
+    ok = bool(toggles >= 4 and frac is not None and 0.005 < frac < 0.5 and p_flame is not None and p_flame >= 0.5)
+    return {"toggles": toggles, "frac_on": frac, "p_flame": p_flame, "ok": ok}
+
+
+def estimate_base_load_fallback(daily_gas, min_days=14):
     """Grove basislast als er geen buitentemperatuur-historie is: 15e percentiel van het dagverbruik."""
     vals = sorted(g for g in daily_gas.values() if g > 0)
     if len(vals) < min_days:

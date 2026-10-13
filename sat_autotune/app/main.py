@@ -36,13 +36,34 @@ class Engine:
         self.tz = ZoneInfo(cfgws.get("time_zone", "Europe/Amsterdam"))
         if self.db.get("install_ts") is None:
             self.db.set("install_ts", time.time())
-        self.dhw, cands = await ha_data.discover_dhw(self.ha, self.cfg)
+        try:
+            self.dhw, table = await ha_data.discover_dhw(self.ha, self.cfg, self.tz)
+        except Exception as e:
+            log.warning("Warm-water-sensor zoeken mislukt: %s", e)
+            self.dhw, table = None, []
+        for c, sc in table:
+            log.info("DHW-kandidaat %s: wisselingen=%s, aan=%s, vlam bij aan=%s%s", c, sc["toggles"],
+                     "–" if sc["frac_on"] is None else f"{sc['frac_on']*100:.1f}%",
+                     "–" if sc["p_flame"] is None else f"{sc['p_flame']*100:.0f}%", "  <== gekozen" if c == self.dhw else "")
         if self.dhw:
-            log.info("Warm-water-sensor: %s (kandidaten: %s)", self.dhw, cands)
+            log.info("Warm-water-sensor: %s", self.dhw)
         else:
-            log.warning("Geen warm-water-sensor van de OTGW gevonden; verdeling verwarming/warm water is niet mogelijk. "
-                        "Zet 'entity_dhw' in de configuratie.")
+            log.warning("Geen betrouwbare warm-water-sensor gevonden; verdeling verwarming/warm water is niet mogelijk. "
+                        "Zet 'entity_dhw' in de configuratie (kandidaten staan hierboven).")
             self.status.append("Warm-water-sensor niet gevonden (entity_dhw instellen voor de gasverdeling)")
+        try:
+            depth = await ha_data.history_depth(self.ha, self.tz)
+        except Exception as e:
+            log.warning("Geschiedenisdiepte bepalen mislukt: %s", e)
+            depth = None
+        if depth is not None:
+            log.info("HA bewaart ongeveer %.0f dagen geschiedenis", depth)
+            need = 2 * self.cfg["wait_days"] + 2
+            if depth < need:
+                msg = (f"HA bewaart maar ~{depth:.0f} dagen geschiedenis; de add-on heeft ~{need} nodig. "
+                       "Zet in configuration.yaml: recorder: purge_keep_days: 35")
+                log.warning(msg)
+                self.status.append(msg)
         missing = await ha_data.check_entities(self.ha)
         if missing:
             self.status.append(f"Ontbrekende entiteiten: {', '.join(missing)}")

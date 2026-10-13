@@ -130,14 +130,35 @@ async def check_entities(ha):
 DHW_TOKENS = ("dhw", "hot_water", "domestic", "tap_water", "warm_water")
 
 
-async def discover_dhw(ha, cfg):
-    """Zoek de OTGW-sensor die aangeeft dat de ketel warm water maakt. Retourneert (gekozen, kandidaten)."""
+async def discover_dhw(ha, cfg, tz):
+    """Zoek de OTGW-sensor die aangeeft dat de ketel warm water maakt, op basis van gedrag.
+    Retourneert (gekozen, tabel met kandidaten)."""
     if cfg.get("entity_dhw"):
-        return cfg["entity_dhw"], [cfg["entity_dhw"]]
+        return cfg["entity_dhw"], []
     states = await ha.ws_call({"type": "get_states"})
     cands = sorted(s["entity_id"] for s in states
                    if s["entity_id"].startswith("binary_sensor.") and "otgw" in s["entity_id"]
                    and any(t in s["entity_id"] for t in DHW_TOKENS))
-    pref = [c for c in cands if any(k in c for k in ("mode", "active", "enable", "burner", "flame"))]
-    pick = (pref or cands or [None])[0]
-    return pick, cands
+    if not cands:
+        return None, []
+    now = datetime.now(tz)
+    a, b = (now - timedelta(days=3)), now
+    res = await _history(ha, cands + [ENT["flame"]], a, b, attrs=False)
+    flame = m.bool_series(m.parse_history(res.get(ENT["flame"])))
+    table = []
+    for c in cands:
+        sc = m.score_dhw_candidate(m.bool_series(m.parse_history(res.get(c))), flame, a.timestamp(), b.timestamp())
+        table.append((c, sc))
+    good = [(c, sc) for c, sc in table if sc["ok"]]
+    pick = max(good, key=lambda x: x[1]["p_flame"])[0] if good else None
+    return pick, table
+
+
+async def history_depth(ha, tz, max_days=45):
+    """Hoeveel dagen geschiedenis bewaart HA (recorder)? Vroegste vlam-wisseling binnen max_days."""
+    now = datetime.now(tz)
+    res = await _history(ha, [ENT["flame"]], now - timedelta(days=max_days), now, attrs=False)
+    ts = [t for t, _, _ in m.parse_history(res.get(ENT["flame"]))]
+    start = (now - timedelta(days=max_days)).timestamp()
+    real = [t for t in ts if t > start + 3600]
+    return (now.timestamp() - min(real)) / 86400 if real else None
