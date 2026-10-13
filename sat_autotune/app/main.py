@@ -200,8 +200,9 @@ class Engine:
     async def analysis(self, start, end):
         today = datetime.now(self.tz).date()
         base = await ha_data.estimate_base_load(self.ha, self.tz, self.cfg, today, self.db, self.dhw)
-        data = await ha_data.fetch(self.ha, self.tz, start, end, self.dhw)
-        return m.analyze(data, self.cfg, start, end, self.tz, base), data
+        cal_start = min(start, end - timedelta(days=27))  # gasverdeling kalibreren op max. 4 weken
+        data = await ha_data.fetch(self.ha, self.tz, cal_start, end, self.dhw)
+        return m.analyze(data, self.cfg, start, end, self.tz, base, calib_start=cal_start), data
 
     async def window(self, days):
         end = datetime.now(self.tz).date() - timedelta(days=1)

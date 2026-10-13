@@ -351,15 +351,59 @@ def analyze_day(data, cfg, d: date, tz: ZoneInfo, base_load):
     return row
 
 
-def analyze(data, cfg, start: date, end: date, tz: ZoneInfo, base_load=None):
-    """Analyseer de dagen start..end (inclusief)."""
+def calibrate_gas(days, min_days=8):
+    """Kalibreer het geschatte ketelverbruik (uit OTGW-modulatie) op de gasmeter:
+    gas_dag = k * ketel_schatting + c. k corrigeert de omrekening naar m3 (vermogen, rendement),
+    c is het gas dat niet via de ketel loopt (koken en overig)."""
+    pts = [(r["boiler_m3"], r["gas_m3"]) for r in days
+           if r.get("boiler_m3") is not None and r.get("gas_m3") is not None and r["gas_m3"] > 0]
+    n = len(pts)
+    if n < min_days:
+        return {"ok": False, "n": n, "reason": f"nog {min_days - n} dag(en) data nodig"}
+    xs, ys = [p[0] for p in pts], [p[1] for p in pts]
+    xb, yb = sum(xs) / n, sum(ys) / n
+    sxx = sum((x - xb) ** 2 for x in xs)
+    if sxx < 1e-6:
+        return {"ok": False, "n": n, "reason": "ketelverbruik varieert te weinig"}
+    k = sum((x - xb) * (y - yb) for x, y in pts) / sxx
+    c = yb - k * xb
+    if c < 0:
+        k = sum(x * y for x, y in pts) / sum(x * x for x in xs)
+        c = 0.0
+    k = max(0.3, min(3.0, k))
+    sst = sum((y - yb) ** 2 for y in ys)
+    sse = sum((y - (k * x + c)) ** 2 for x, y in pts)
+    r2 = 1 - sse / sst if sst > 1e-9 else 0.0
+    return {"ok": r2 >= 0.5, "k": k, "c": c, "r2": r2, "n": n,
+            "reason": None if r2 >= 0.5 else f"verband met de gasmeter te zwak (R² {r2:.2f})"}
+
+
+def apply_calibration(days, cal):
+    for r in days:
+        for key in ("boiler_m3", "dhw_m3", "ch_m3"):
+            if r.get(key) is not None:
+                r[key] *= cal["k"]
+        if r.get("gas_m3") is not None and r.get("boiler_m3") is not None:
+            r["other_m3"] = r["gas_m3"] - r["boiler_m3"]
+        r["calibrated"] = True
+
+
+def analyze(data, cfg, start: date, end: date, tz: ZoneInfo, base_load=None, calib_start=None):
+    """Analyseer de dagen start..end (inclusief). calib_start: eerdere startdag om de gasverdeling
+    op een langere periode te kalibreren (alleen start..end komt in het resultaat)."""
     base = base_load if base_load else (cfg.get("base_gas_m3_per_day") or None)
-    days = []
-    d = start
+    first = min(calib_start, start) if calib_start else start
+    all_days = []
+    d = first
     while d <= end:
-        days.append(analyze_day(data, cfg, d, tz, base))
+        all_days.append(analyze_day(data, cfg, d, tz, base))
         d += timedelta(days=1)
+    cal = calibrate_gas(all_days)
+    if cal.get("ok"):
+        apply_calibration(all_days, cal)
+    days = [r for r in all_days if r["date"] >= start.isoformat()]
     return {
+        "calibration": cal,
         "start": start.isoformat(),
         "end": end.isoformat(),
         "base_load_m3_per_day": base,

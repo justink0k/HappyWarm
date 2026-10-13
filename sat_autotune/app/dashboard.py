@@ -345,19 +345,21 @@ def recommendations(ctx):
                   "Kan veilig 5 °C omlaag; de add-on stelt dit voor als het nuttig is."))
 
     gt = agg.get("split_gas_m3")
+    cal = an.get("calibration") or {}
     if gt and agg.get("split_boiler_m3") is not None:
         bo, ot, dh = agg["split_boiler_m3"], agg["split_other_m3"], agg.get("split_dhw_m3")
-        if ot < -0.1 * gt:
-            r.append(("info", "Gasverdeling klopt (nog) niet",
-                      f"SAT schat het ketelverbruik op {_nl(bo)} m³, meer dan de gasmeter ({_nl(gt)} m³). De verbruiksschatting van SAT is dan te hoog.",
-                      "Controleer 'maximum_consumption' en 'minimum_consumption' in de SAT-opties (nu schatting)."))
-        elif dh is not None:
+        if cal.get("ok"):
+            how = (f"Gekalibreerd op je gasmeter over {cal['n']} dagen (correctie ×{_nl(cal['k'], 2)}, R² {_nl(cal['r2'], 2)}); "
+                   f"koken en overig is ongeveer {_nl(cal['c'], 2)} m³ per dag.")
+        else:
+            how = f"Nog niet gekalibreerd ({cal.get('reason', 'te weinig data')}); schatting uit OTGW-modulatie en de min/max van SAT."
+        if dh is not None:
             r.append(("info", f"Gas: {(bo-dh)/gt*100:.0f}% verwarming, {dh/gt*100:.0f}% warm water, {max(0,ot)/gt*100:.0f}% koken en overig",
-                      f"Over deze periode ({_nl(gt)} m³). Warm water volgt uit de OTGW-sensor en het ketelverbruik volgens SAT; koken is wat er overblijft.",
+                      f"Over deze periode ({_nl(gt)} m³). Warm water volgt uit de OTGW; {how}",
                       "Warm water is vaak 20 tot 40% van het gas: kortere douches of een iets lagere warmwatertemperatuur is een besparing die losstaat van de stooklijn." if dh/gt > 0.2 else ""))
         else:
             r.append(("info", f"Gas: {bo/gt*100:.0f}% via de ketel, {max(0,ot)/gt*100:.0f}% koken en overig",
-                      "Zonder warm-water-sensor kan ik verwarming en warm water niet uit elkaar halen.",
+                      "Zonder warm-water-sensor kan ik verwarming en warm water niet uit elkaar halen. " + how,
                       "Stel 'entity_dhw' in op de OTGW-sensor voor warm water (zie het log voor kandidaten)."))
     opv = ctx.get("opv")
     if opv:
@@ -569,7 +571,7 @@ def page(ctx):
 <div class=grid2>
 <div class=card><h3>Gasverbruik per dag</h3><p class=cap>m³, hele huis. De stippellijn is de schatting voor douchen en koken.</p>{gas_chart}</div>
 <div class=card><h3>Gas tegenover kou</h3><p class=cap>Verwarmingsgas (m³) per graaddag. Dichter bij de lijn = voorspelbaarder; lager = zuiniger.</p>{scatter}</div>
-<div class=card><h3>Waar blijft je gas?</h3><p class=cap>Verdeling per dag (m³): verwarming, warm water en koken. Schatting uit het ketelverbruik van SAT.</p>{split_chart}</div>
+<div class=card><h3>Waar blijft je gas?</h3><p class=cap>Verdeling per dag (m³): verwarming, warm water en koken. Uit de OTGW (modulatie en warm-water-status), gekalibreerd op je gasmeter.</p>{split_chart}</div>
 <div class=card><h3>Buitentemperatuur</h3><p class=cap>Daggemiddelde in °C (de waarde die SAT gebruikt). Alleen dagen onder de stippellijn zijn koud genoeg om te vergelijken.</p>{out_chart}</div>
 <div class=card><h3>Graaddagen per dag</h3><p class=cap>Hoe koud het was (stookgrens {_nl(cfg['degree_day_base'], 0)} °C).</p>{gd_chart}</div>
 <div class=card><h3>Aanvoertemperatuur</h3><p class=cap>Gemiddeld tijdens branden. Onder de stippellijn condenseert de ketel.</p>{flow_chart}</div>

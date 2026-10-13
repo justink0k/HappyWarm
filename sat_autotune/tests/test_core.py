@@ -367,3 +367,20 @@ def test_derive_consumption_from_modulation():
     data["consumption"] = m.derive_consumption([(t(a), 100.0)], 0.43, 2.4)
     d = m.analyze(data, CFG, a, b, TZ)["days"][0]
     assert d["boiler_m3"] == pytest.approx(4 * 0.25 * 2.4)
+
+
+def test_gas_calibration_recovers_factor():
+    import random
+    random.seed(5)
+    days = []
+    for i in range(20):
+        est = 2 + random.random() * 8                       # SAT/OTGW-schatting ketel (m3)
+        days.append({"date": f"2026-10-{i+1:02d}", "boiler_m3": est, "dhw_m3": est * 0.2, "ch_m3": est * 0.8,
+                     "gas_m3": 1.3 * est + 0.4 + random.random() * 0.1, "other_m3": None})
+    cal = m.calibrate_gas(days)
+    assert cal["ok"] and cal["k"] == pytest.approx(1.3, abs=0.05) and cal["c"] == pytest.approx(0.45, abs=0.2)
+    m.apply_calibration(days, cal)
+    assert days[0]["boiler_m3"] == pytest.approx((days[0]["gas_m3"] - 0.45), abs=0.4)
+    assert not m.calibrate_gas(days[:5])["ok"]
+    ruis = [dict(d, gas_m3=random.random() * 10) for d in days]
+    assert not m.calibrate_gas(ruis)["ok"]
