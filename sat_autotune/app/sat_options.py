@@ -35,6 +35,16 @@ class RestFlowAPI:
             log.debug("flow abort: %s", e)
 
 
+def num(v):
+    """'3' -> 3.0, 3 -> 3.0; alles wat geen getal is blijft ongewijzigd."""
+    if isinstance(v, bool) or v is None:
+        return v
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return v
+
+
 def form_fields(result):
     """Formulier -> {naam: {'value', 'options', 'has_value'}}."""
     out = {}
@@ -112,11 +122,17 @@ async def set_field(api, entry_id, field, value):
     cur = before[field]
     if isinstance(cur, bool) or cur is None:
         raise OptionsError(f"Veld '{field}' heeft een onverwacht type ({type(cur).__name__})")
-    if isinstance(cur, int) and float(value).is_integer():
-        value = int(value)
-    elif isinstance(cur, (int, float)):
-        value = float(value)
+    value = num(value)
     opts = form[field]["options"]
+    if isinstance(cur, str):
+        # SAT bewaart sommige getallen als tekst (bijv. cycles_per_hour = '3'); zelfde vorm teruggeven
+        if not isinstance(value, float):
+            raise OptionsError(f"Waarde {value!r} is geen getal voor '{field}'")
+        value = str(int(value)) if value.is_integer() else str(value)
+    elif isinstance(cur, int):
+        value = int(value) if float(value).is_integer() else float(value)
+    elif isinstance(cur, float):
+        value = float(value)
     if opts and value not in opts and str(value) not in [str(o) for o in opts]:
         raise OptionsError(f"Waarde {value} niet toegestaan voor '{field}' (opties: {opts})")
 
@@ -168,6 +184,8 @@ def check_compat(cfg, snapshot, sat_version):
     elif sat_version != cfg["expected_sat_version"]:
         problems.append(f"SAT-versie {sat_version} (verwacht {cfg['expected_sat_version']})")
     for key in ("field_coef", "field_max_setpoint", "field_cycles", "field_opv"):
+        if not cfg[key]:
+            continue  # bewust uitgeschakelde instelling (leeg veld)
         if cfg[key] not in snapshot:
             problems.append(f"SAT-optie '{cfg[key]}' niet gevonden")
     return problems

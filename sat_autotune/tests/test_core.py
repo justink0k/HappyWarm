@@ -162,12 +162,12 @@ class FakeSAT:
     def __init__(self):
         self.opts = {
             "heating_curve_coefficient": 1.8, "maximum_setpoint": 60, "cycles_per_hour": 3,
-            "overshoot_protection_value": 45, "target_temperature_step": 0.5,
+            "overshoot_protection_value": 45, "target_temperature_step": 0.5, "cycles_text": "3",
             "mode": "pid", "window_sensors": ["a", "b"], "name": "Living",
         }
         self.steps = {
             "general": ["name", "target_temperature_step", "mode"],
-            "advanced": ["heating_curve_coefficient", "maximum_setpoint", "cycles_per_hour", "overshoot_protection_value", "window_sensors"],
+            "advanced": ["heating_curve_coefficient", "maximum_setpoint", "cycles_per_hour", "cycles_text", "overshoot_protection_value", "window_sensors"],
         }
         self.flows = {}
         self.n = 0
@@ -209,6 +209,22 @@ def test_set_field_changes_only_one_field():
     # terugzetten laat alles weer identiek
     run(so.set_field(api, "e1", "heating_curve_coefficient", 1.8))
     assert api.opts == before
+
+
+def test_set_field_text_number_and_revert_with_string():
+    api = FakeSAT()
+    api.opts["cycles_per_hour"] = "3"
+    run(so.set_field(api, "e1", "cycles_per_hour", 4.0))
+    assert api.opts["cycles_per_hour"] == "4"
+    run(so.set_field(api, "e1", "cycles_per_hour", "3"))  # terugdraaien met oude (tekst)waarde
+    assert api.opts["cycles_per_hour"] == "3"
+    assert so.num("3") == 3.0 and so.num("00:01:00") == "00:01:00" and so.num(None) is None
+
+
+def test_disabled_field_skips_compat():
+    cfg = dict(CFG, field_opv="")
+    snap = {"heating_curve_coefficient": 1, "maximum_setpoint": 1, "cycles_per_hour": "3"}
+    assert so.check_compat(cfg, snap, "4.2.0") == []
 
 
 def test_set_field_integer_type_preserved():

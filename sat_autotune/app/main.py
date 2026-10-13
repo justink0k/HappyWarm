@@ -90,9 +90,11 @@ class Engine:
     def current_opts(self, snap):
         out = {}
         for key, cfgname in TUNABLE.items():
-            v = snap.get(self.cfg[cfgname])
-            if isinstance(v, (int, float)) and not isinstance(v, bool):
-                out[key] = float(v)
+            if not self.cfg[cfgname]:
+                continue  # uitgeschakeld
+            v = so.num(snap.get(self.cfg[cfgname]))
+            if isinstance(v, float):
+                out[key] = v
         return out
 
     async def sync_snapshot(self, snap=None):
@@ -123,11 +125,11 @@ class Engine:
     async def apply(self, key, new, reason, source="auto"):
         field = self.cfg[TUNABLE[key]]
         snap = await self.sync_snapshot()
-        old = snap.get(field)
+        old = so.num(snap.get(field))
         self.db.set("own_write", field)
         await so.set_field(self.api, self.entry_id, field, new)
         snap2 = await self.sync_snapshot(None)
-        return old, snap2.get(field)
+        return old, so.num(snap2.get(field))
 
     # ------------------------------------------------------------ analyse
     async def analysis(self, start, end):
