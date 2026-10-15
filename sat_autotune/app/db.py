@@ -34,6 +34,11 @@ class DB:
         self.c.execute("INSERT INTO reports(ts,kind,data) VALUES(?,?,?)", (ts or time.time(), kind, json.dumps(data)))
         self.c.commit()
 
+    def prune(self, kind, keep):
+        self.c.execute("DELETE FROM reports WHERE kind=? AND id NOT IN "
+                       "(SELECT id FROM reports WHERE kind=? ORDER BY ts DESC LIMIT ?)", (kind, kind, keep))
+        self.c.commit()
+
     def reports(self, kind=None, limit=20):
         q = "SELECT * FROM reports" + (" WHERE kind=?" if kind else "") + " ORDER BY ts DESC LIMIT ?"
         args = ((kind,) if kind else ()) + (limit,)

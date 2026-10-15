@@ -417,7 +417,7 @@ CSS = """
 @media(prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#121211;--card:#1a1a19;--ink:#fff;--ink2:#c3c2b7;--mut:#908f87;--line:#2c2c2a;--grid:#262624;
 --s1:#3987e5;--s2:#d95926;--s3:#199e70;--s7:#9085e9;--cold:#3987e5;--warm:#d95926;--ok:#4cc27d;--warn:#e0a53a;--bad:#ee7d7d;--ref:#908f87;--band:#3987e51c}}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,sans-serif}
-main{max-width:1100px;margin:auto;padding:20px 16px 60px}
+a{color:var(--s1)}main{max-width:1100px;margin:auto;padding:20px 16px 60px}
 h1{font-size:26px;margin:0}h2{font-size:18px;margin:34px 0 4px}.sub{color:var(--ink2);margin:0 0 12px;font-size:14px}.mut{color:var(--mut)}
 header{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:baseline;justify-content:space-between}
 .pills{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 4px}.pill{background:var(--card);border:1px solid var(--line);border-radius:99px;padding:3px 11px;font-size:13px;color:var(--ink2)}
@@ -562,7 +562,7 @@ def page(ctx):
     period = f"{an.get('start', '')} t/m {an.get('end', '')}" if an else ""
     return f"""<!doctype html><html lang=nl><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1"><title>SAT Autotune</title><style>{CSS}</style></head><body><main>
-<header><h1>SAT Autotune</h1><span class=mut>Bijgewerkt {datetime.now().strftime('%d-%m %H:%M')}</span></header>
+<header><h1>SAT Autotune</h1><span class=mut>Analyse van {esc(ctx.get('report_ts') or '–')} · <a href="refresh">Vernieuwen</a></span></header>
 <div class=pills>{status}</div><div class=pills>{pills}</div>
 <div class=tiles>{tiles or empty}</div>
 <h2>Aanbevelingen</h2><p class=sub>Op basis van de cijfers hieronder. De add-on past alleen aan binnen de ingestelde regels.</p>{recos}

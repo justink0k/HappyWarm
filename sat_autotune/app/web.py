@@ -52,8 +52,10 @@ async def index(request):
     eng = request.app["eng"]
     if request.remote not in (INGRESS_IP, "127.0.0.1", "::1"):
         return web.Response(status=403, text="Alleen via Home Assistant (Ingress)")
-    reps = eng.db.reports("weekly", 12) or eng.db.reports("test", 1)
-    latest = reps[0]["data"] if reps else None
+    newest = eng.db.reports(None, 1)
+    reps = eng.db.reports("weekly", 12)
+    latest = newest[0]["data"] if newest else None
+    report_ts = datetime.fromtimestamp(newest[0]["ts"], eng.tz).strftime("%d-%m %H:%M") if newest else None
     hist = [r["data"] for r in reps]
     status = list(eng.status)
     ph = tuner.phase(__import__("time").time(), eng.db.get("install_ts"), eng.cfg)
@@ -71,13 +73,25 @@ async def index(request):
         "latest": latest, "history": hist, "changes": _fmt_changes(eng), "status": status,
         "live": await _live(eng), "cfg": eng.cfg, "opts": eng.current_opts(eng.db.last_snapshot() or {}),
         "active": await eng.active(), "dry_run_end": dry_end,
-        "opv": eng.db.get("opv_seen"), "dhw_found": bool(eng.dhw)}))
+        "opv": eng.db.get("opv_seen"), "dhw_found": bool(eng.dhw), "report_ts": report_ts}))
+
+
+async def refresh(request):
+    eng = request.app["eng"]
+    if request.remote not in (INGRESS_IP, "127.0.0.1", "::1"):
+        return web.Response(status=403, text="Alleen via Home Assistant (Ingress)")
+    try:
+        await eng.refresh_report()
+    except Exception:
+        log.exception("verversen mislukt")
+    raise web.HTTPFound("./")
 
 
 async def start_web(eng):
     app = web.Application()
     app["eng"] = eng
     app.router.add_get("/", index)
+    app.router.add_get("/refresh", refresh)
     runner = web.AppRunner(app)
     await runner.setup()
     await web.TCPSite(runner, "0.0.0.0", 8099).start()

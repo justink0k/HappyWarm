@@ -222,10 +222,13 @@ class Engine:
             advice = await advisor.explain(self.cfg["anthropic_api_key"], self.cfg["anthropic_model"], nums)
         text = report.text_report(an, cmp_pct, pdesc, phase, advice)
         rec = {"an": an, "text": text, "cmp_pct": cmp_pct, "proposal": pdesc, "phase": phase}
-        if kind == "weekly":
-            self.db.add_report("weekly", rec)
+        if kind in ("weekly", "daily"):
+            self.db.add_report(kind, rec)
+            if kind == "daily":
+                self.db.prune("daily", 10)
             await self.publish_sensors(an, cmp_pct)
-            await self.push("SAT Autotune weekrapport", report.push_summary(an, cmp_pct, pdesc, phase))
+            if kind == "weekly":
+                await self.push("SAT Autotune weekrapport", report.push_summary(an, cmp_pct, pdesc, phase))
         return rec
 
     async def make_proposal(self):
@@ -368,8 +371,20 @@ class Engine:
             return False
         return self.db.get("report_day") != now.date().isoformat()
 
+    async def refresh_report(self):
+        """Ververs de analyse voor het dashboard (zonder melding)."""
+        self.db.set("daily_ts", time.time())
+        try:
+            await self.build_report("daily")
+        except HAError:
+            raise
+        except Exception:
+            log.exception("Analyse verversen mislukt")
+
     async def tick(self):
         now = datetime.now(self.tz)
+        if time.time() - (self.db.get("daily_ts") or 0) > 6 * 3600:
+            await self.refresh_report()
         if self.report_due(now):
             self.db.set("report_day", now.date().isoformat())
             await self.build_report("weekly")
