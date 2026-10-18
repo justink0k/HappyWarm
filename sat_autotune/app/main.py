@@ -9,7 +9,7 @@ import time
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from . import advisor, config, ha_data, metrics as m, report, sat_options as so, tuner
+from . import advisor, config, ha_data, metrics as m, report, sat_options as so, setback, tuner
 from .const import ENT, LABELS, NOTIFY_SERVICE, REVERT_ACTION, ROOMS, SENSOR_PREFIX, TUNABLE
 from .db import DB
 from .ha_client import HA, HAError
@@ -205,7 +205,23 @@ class Engine:
         data = await ha_data.fetch(self.ha, self.tz, cal_start, end, self.dhw)
         an = m.analyze(data, self.cfg, start, end, self.tz, base, calib_start=cal_start)
         self.archive_days(an.pop("all_days", []))
+        self.update_events(data, cal_start, end, an.get("calibration"))
         return m.merge_archive(an, self.db.days(), self.cfg), data
+
+    def update_events(self, data, first, end, cal):
+        """Afwezigheden analyseren (loont terugzetten?) en in het archief bewaren."""
+        try:
+            k = cal["k"] if cal and cal.get("ok") else 1.0
+            a = m.day_bounds(first, self.tz)[0]
+            b = m.day_bounds(end, self.tz)[1]
+            events, fit = setback.compute_events(data, a, b, k)
+            for ev in events:
+                self.db.upsert_event(ev["start"], ev)
+            self.db.commit()
+            log.info("Afwezigheden: %d gevonden; referentiemodel: %s", len(events),
+                     "ok (%d uren)" % fit["n"] if fit and fit.get("ok") else ("te weinig thuisuren (%d)" % fit["n"] if fit else "geen"))
+        except Exception:
+            log.exception("Afwezigheidsanalyse mislukt")
 
     def archive_days(self, rows):
         """Bewaar volledige dagen in de eigen database, zodat ze het verlopen van de HA-geschiedenis overleven."""

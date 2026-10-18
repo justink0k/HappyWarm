@@ -418,3 +418,41 @@ def test_dashboard_price_and_long_term():
     h = dashboard.page({"latest": rep, "history": [], "changes": [], "status": [], "live": {}, "cfg": CFG,
                         "weeks": weeks, "price": 1.4, "opts": {}, "active": True})
     assert "Langere termijn" in h and "Gaskosten" in h and "€" in h and "export.csv" in h
+
+
+def test_setback_event_saving():
+    from app import setback
+    d0 = t(date(2026, 10, 1))
+    H = 3600
+    n_h = 72
+    flame, cons, person, sp, preset, room, outside, flow = [], [(d0, 1.2)], [(d0, 1)], [(d0, 20.0)], [(d0, "home")], [(d0, 20.0)], [(d0, 8.0)], [(d0, 42.0)]
+    away_s, away_e = d0 + 30 * H, d0 + 40 * H           # 10 uur weg, dag 2
+    for h in range(n_h):
+        s_ = d0 + h * H
+        if away_s <= s_ < away_e:
+            continue                                       # ketel uit tijdens afwezigheid
+        flame += [(s_, 1), (s_ + 900, 0)]                  # 0,3 m3 per uur
+    flame = [(d0, 0)] + flame
+    person += [(away_s, 0), (away_e, 1)]
+    sp += [(away_s + 600, 16.0), (away_e + 600, 20.0)]
+    preset += [(away_s + 600, "away"), (away_e + 600, "home")]
+    room += [(away_s + H, 18.0), (away_e, 18.0), (away_e + 2 * H, 19.8)]
+    data = {"consumption": cons, "flame": flame, "dhw": None, "person": person, "setpoint": sp, "preset": preset,
+            "rooms": {"woonkamer": sorted(room)}, "outside": outside, "flow": flow, "manual": [(d0, 0)]}
+    events, fit = setback.compute_events(data, d0, d0 + n_h * H)
+    assert fit["ok"] and len(events) == 1
+    ev = events[0]
+    assert ev["hours"] == pytest.approx(10) and ev["drop"] == pytest.approx(2.0)
+    assert ev["recovery_min"] == pytest.approx(120, abs=15)
+    assert ev["saving_m3"] > 2.0          # ~12 uur x 0,3 m3 verwacht, ~2 uur opwarmen terug
+    s = setback.summarize(events * 6)
+    assert s["verdict"][0] == "goed"
+
+
+def test_dashboard_setback_section():
+    ev = {"start": time.time() - 86400, "end": time.time() - 80000, "hours": 9.0, "drop": 1.4, "recovery_min": 75.0, "reached": True,
+          "flow_recovery": 47.0, "pct55_recovery": 100.0, "actual_m3": 1.1, "expected_m3": 2.4, "saving_m3": 1.3}
+    h = dashboard.page({"latest": None, "history": [], "changes": [], "status": [], "live": {}, "cfg": CFG, "events": [ev] * 6, "tz": TZ, "price": 1.4})
+    assert "Terugzetten bij afwezigheid" in h and "Terugzetten loont" in h
+    h2 = dashboard.page({"latest": None, "history": [], "changes": [], "status": [], "live": {}, "cfg": CFG, "events": [], "tz": TZ})
+    assert "Nog geen afwezigheden" in h2

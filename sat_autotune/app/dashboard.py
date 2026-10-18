@@ -268,6 +268,38 @@ def spark(vals, color):
 SEV = {"kans": ("▲", "Kans", 0), "let_op": ("!", "Let op", 1), "goed": ("✓", "Goed", 2), "info": ("i", "Info", 3)}
 
 
+def setback_html(ctx):
+    from . import setback
+    events = ctx.get("events") or []
+    tz = ctx.get("tz")
+    price = ctx.get("price") or 0
+    if not events:
+        return ('<h2>Terugzetten bij afwezigheid</h2><p class=sub>Meet of het slim is de temperatuur te laten zakken als je weg bent.</p>'
+                '<div class=card><p class=mut>Nog geen afwezigheden van 3 uur of langer gevonden. Zodra je weg bent geweest, verschijnen ze hier.</p></div>')
+    sm = setback.summarize(events, price)
+    sev, text = sm.get("verdict", ("info", ""))
+    icon, label, _ = SEV[sev]
+    tiles = "".join([
+        tile("Afwezigheden", f"{sm['n']}", f"gem. {_nl(sm['avg_hours'], 1)} uur weg"),
+        tile("Kamer zakt", f"{_nl(sm['avg_drop'])} <small>°C</small>", "gemiddeld tijdens afwezigheid"),
+        tile("Opwarmen", f"{_nl(sm['avg_recovery_min'], 0)} <small>min</small>", f"aanvoer {_nl(sm['avg_flow'], 0)} °C, {_nl(sm['avg_pct55'], 0)}% onder 55 °C"),
+        tile("Besparing", f"{_nl(sm['avg_saving'], 2)} <small>m³ per keer</small>", (f"totaal {_nl(sm['total_saving'], 1)} m³" if sm.get("total_saving") is not None else "")),
+    ])
+    def fmt_t(ts):
+        return datetime.fromtimestamp(ts, tz).strftime("%d-%m %H:%M") if tz else datetime.fromtimestamp(ts).strftime("%d-%m %H:%M")
+    rows = "".join(
+        f"<tr><td>{fmt_t(e['start'])}</td><td class=num>{_nl(e['hours'], 1)}</td><td class=num>{_nl(e['drop'])}</td>"
+        f"<td class=num>{_nl(e['recovery_min'], 0) if e.get('reached') else '> 6 u'}</td><td class=num>{_nl(e['flow_recovery'], 0)}</td>"
+        f"<td class=num>{_nl(e['actual_m3'], 2)}</td><td class=num>{_nl(e['expected_m3'], 2)}</td><td class=num>{_nl(e['saving_m3'], 2)}</td></tr>"
+        for e in reversed(events[-30:]))
+    return (f'<h2>Terugzetten bij afwezigheid</h2><p class=sub>Het gas voor verwarming tijdens je afwezigheid plus het opwarmen, naast wat de ketel '
+            f'bij thuisblijven zou hebben verstookt (model uit je thuisuren; een schatting).</p>'
+            f'<ul class=recos><li class="reco {sev}"><span class=badge><span aria-hidden=true>{icon}</span> {label}</span><div><b>{esc(text)}</b></div></li></ul>'
+            f'<div class=tiles>{tiles}</div>'
+            f'<div class="tbl scroll"><table><tr><th>Vertrek</th><th>Uren weg</th><th>Daling °C</th><th>Opwarmen min</th><th>Aanvoer °C</th>'
+            f'<th>Werkelijk m³</th><th>Verwacht m³</th><th>Besparing m³</th></tr>{rows}</table></div>')
+
+
 def eur(m3, price):
     return f" (ongeveer € {m3 * price:.0f})" if price else ""
 
@@ -604,6 +636,7 @@ def page(ctx):
 <div class=card><h3>Kamers t.o.v. setpoint</h3><p class=cap>Gemiddelde afwijking in °C. ● = kamer die de add-on bewaakt.</p>{dev}</div>
 </div>
 {long_html}
+{setback_html(ctx)}
 <h2>Trend per week</h2><p class=sub>Rode lijnen markeren een wijziging van een instelling.</p>{trend_note}
 <div class=grid2>
 <div class=card><h3>Gas per graaddag</h3><p class=cap>m³, alleen verwarming. Lager is beter.</p>{trend_gas}</div>

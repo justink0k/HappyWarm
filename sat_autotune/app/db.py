@@ -19,6 +19,7 @@ class DB:
                 source TEXT, reason TEXT, status TEXT, eval_ts REAL, baseline TEXT, result TEXT,
                 closed_ts REAL);
             CREATE TABLE IF NOT EXISTS days(date TEXT PRIMARY KEY, data TEXT);
+            CREATE TABLE IF NOT EXISTS events(ts REAL PRIMARY KEY, data TEXT);
             CREATE TABLE IF NOT EXISTS snapshots(id INTEGER PRIMARY KEY, ts REAL, data TEXT);
             """
         )
@@ -40,6 +41,12 @@ class DB:
 
     def days(self):
         return [json.loads(r["data"]) for r in self.c.execute("SELECT data FROM days ORDER BY date")]
+
+    def upsert_event(self, ts, data):
+        self.c.execute("INSERT OR REPLACE INTO events VALUES(?,?)", (ts, json.dumps(data)))
+
+    def events(self):
+        return [json.loads(r["data"]) for r in self.c.execute("SELECT data FROM events ORDER BY ts")]
 
     def commit(self):
         self.c.commit()

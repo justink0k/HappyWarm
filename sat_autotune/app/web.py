@@ -6,7 +6,7 @@ from datetime import datetime
 
 from aiohttp import web
 
-from . import dashboard, metrics, tuner
+from . import dashboard, metrics, setback, tuner
 from .const import ENT, LABELS, ROOMS
 from .ha_client import HAError
 
@@ -74,7 +74,7 @@ async def index(request):
         "live": await _live(eng), "cfg": eng.cfg, "opts": eng.current_opts(eng.db.last_snapshot() or {}),
         "active": await eng.active(), "dry_run_end": dry_end,
         "opv": eng.db.get("opv_seen"), "dhw_found": bool(eng.dhw), "report_ts": report_ts,
-        "weeks": metrics.weekly_summary(eng.db.days(), eng.cfg), "price": eng.cfg.get("gas_price_eur_per_m3") or 0}))
+        "weeks": metrics.weekly_summary(eng.db.days(), eng.cfg), "events": eng.db.events(), "tz": eng.tz, "price": eng.cfg.get("gas_price_eur_per_m3") or 0}))
 
 
 async def refresh(request):
