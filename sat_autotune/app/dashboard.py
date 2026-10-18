@@ -268,6 +268,10 @@ def spark(vals, color):
 SEV = {"kans": ("▲", "Kans", 0), "let_op": ("!", "Let op", 1), "goed": ("✓", "Goed", 2), "info": ("i", "Info", 3)}
 
 
+def eur(m3, price):
+    return f" (ongeveer € {m3 * price:.0f})" if price else ""
+
+
 def recommendations(ctx):
     """Regelgebaseerde adviezen: (severity, titel, uitleg, wat_te_doen)."""
     r = []
@@ -329,8 +333,13 @@ def recommendations(ctx):
         if not rm:
             continue
         if rm["mean_dev"] > 0.8:
+            per_day = (agg.get("gas_heating_m3") / agg["valid_days"]) if agg.get("gas_heating_m3") and agg.get("valid_days") else None
+            money = ""
+            if per_day:
+                m3 = 0.06 * rm["mean_dev"] * per_day * 30
+                money = f" Bij het weer van deze periode is dat ongeveer {_nl(m3, 1)} m³ per maand{eur(m3, ctx.get('price') or 0)}."
             r.append(("kans", f"{n.capitalize()} zit {_nl(rm['mean_dev'])} °C boven het setpoint",
-                      "Elke graad die je niet te warm stookt scheelt ongeveer 5 tot 7% gas (vuistregel).",
+                      "Elke graad die je niet te warm stookt scheelt ongeveer 5 tot 7% gas (vuistregel)." + money,
                       "Controleer of het setpoint of de kamersensor klopt; een iets lager setpoint kan direct besparen."))
         elif rm["mean_dev"] < -0.8 or rm["cold_home_frac"] > 0.05:
             r.append(("let_op", f"{n.capitalize()} zit vaak te koud",
@@ -492,6 +501,7 @@ def page(ctx):
                  spark_html=spark([d["starts"] for d in days], "--s3")),
             tile("Aanvoer", f'{nl(agg.get("flow_mean"), 0)} <small>°C</small>', f"{nl(agg.get('pct_flow_below55'), 0)}% onder 55 °C",
                  spark_html=spark([d["flow_mean"] for d in days], "--s2")),
+            *([tile("Gaskosten", f'€ {_nl(agg.get("gas_total_m3", 0) * ctx["price"], 2)}', f"deze periode, € {_nl(ctx['price'], 2)} per m³")] if ctx.get("price") else []),
             tile("Buitentemperatuur", f'{nl(avg_out)} <small>°C</small>', f"laagste dag {nl(min(outs))} · hoogste {nl(max(outs))}" if outs else "",
                  spark_html=spark([d["avg_out"] for d in days], "--s2")),
             tile("Vergelijkbare dagen", f'{agg.get("valid_days", 0)} <small>van {agg.get("days_total", 0)}</small>', f"minimaal {cfg['min_valid_days']} nodig"),
@@ -534,6 +544,21 @@ def page(ctx):
     trend_note = "" if len(hist) > 1 else '<p class="mut cap">Een trend verschijnt na een paar weekrapporten.</p>'
 
     split_chart = stacked_chart(days, labels)
+    weeks = ctx.get("weeks") or []
+    price = ctx.get("price") or 0
+    wl = [w["start"][8:10] + "/" + w["start"][5:7] for w in weeks]
+    wtip = lambda w: (f"week van {w['start'][8:10]}/{w['start'][5:7]}: {_nl(w['gas_total'], 1)} m³ gas"  # noqa: E731
+                      + (f" (€ {_nl(w['gas_total'] * price, 2)})" if price and w["gas_total"] is not None else "")
+                      + f", {_nl(w['avg_out'])} °C buiten, {w['valid_days']} vergelijkbare dagen")
+    long_gas = bar_chart([w["gas_total"] for w in weeks], wl, [wtip(w) for w in weeks], "--s1")
+    long_gd = line_chart([w["gas_per_gd"] for w in weeks], wl,
+                         [f"week van {w['start'][8:10]}/{w['start'][5:7]}: " + (_nl(w["gas_per_gd"], 3) + " m³/graaddag" if w["gas_per_gd"] is not None else "geen vergelijkbare dagen") for w in weeks], "--s1")
+    long_out = line_chart([w["avg_out"] for w in weeks], wl, [f"week van {w['start'][8:10]}/{w['start'][5:7]}: {_nl(w['avg_out'])} °C" for w in weeks], "--s2")
+    long_html = (f'<h2>Langere termijn</h2><p class=sub>Uit het eigen archief van de add-on: {len(ctx.get("weeks") or [])} week(en), '
+                 f'dus ook als HA de oude geschiedenis al heeft verwijderd. <a href="export.csv">Download als CSV</a></p>'
+                 f'<div class=grid2><div class=card><h3>Gas per week</h3><p class=cap>m³, hele huis.</p>{long_gas}</div>'
+                 f'<div class=card><h3>Gas per graaddag per week</h3><p class=cap>m³, alleen verwarming. Lager is zuiniger; alleen weken met vergelijkbare dagen.</p>{long_gd}</div>'
+                 f'<div class=card><h3>Buitentemperatuur per week</h3><p class=cap>Gemiddeld in °C.</p>{long_out}</div></div>') if weeks else ""
     dev = deviation_chart(agg.get("rooms") or {}, monitored)
     recos = reco_html(recommendations(ctx))
 
@@ -578,6 +603,7 @@ def page(ctx):
 <div class=card><h3>Ketelstarts per dag</h3><p class=cap>Minder starts met langere branden is rustiger.</p>{starts_chart}</div>
 <div class=card><h3>Kamers t.o.v. setpoint</h3><p class=cap>Gemiddelde afwijking in °C. ● = kamer die de add-on bewaakt.</p>{dev}</div>
 </div>
+{long_html}
 <h2>Trend per week</h2><p class=sub>Rode lijnen markeren een wijziging van een instelling.</p>{trend_note}
 <div class=grid2>
 <div class=card><h3>Gas per graaddag</h3><p class=cap>m³, alleen verwarming. Lager is beter.</p>{trend_gas}</div>

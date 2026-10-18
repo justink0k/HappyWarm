@@ -384,3 +384,37 @@ def test_gas_calibration_recovers_factor():
     assert not m.calibrate_gas(days[:5])["ok"]
     ruis = [dict(d, gas_m3=random.random() * 10) for d in days]
     assert not m.calibrate_gas(ruis)["ok"]
+
+
+def test_archive_merge_and_weekly():
+    import app.db as dbm
+    data, a, b = synth_data(days=14)
+    cfgd = dict(CFG)
+    an_full = m.analyze(data, cfgd, a, b, TZ, base_load=2.0)
+    rows = an_full["all_days"]
+    db = dbm.DB(":memory:")
+    for r in rows:
+        db.upsert_day(r["date"], r)
+    # HA heeft de eerste 7 dagen niet meer: lege data
+    empty = {k: ([] if isinstance(v, list) else ({} if isinstance(v, dict) else v)) for k, v in data.items()}
+    empty["rooms"] = {}
+    an = m.analyze(empty, cfgd, a, b, TZ, base_load=2.0)
+    assert an["agg"]["valid_days"] == 0
+    an.pop("all_days")
+    merged = m.merge_archive(an, db.days(), cfgd)
+    assert merged["agg"]["valid_days"] == 14
+    wk = m.weekly_summary(db.days(), cfgd)
+    assert len(wk) >= 2 and wk[0]["gas_per_gd"] == pytest.approx(10.4 / 10, rel=1e-2)
+    assert dbm.DB(":memory:").days() == []
+
+
+def test_dashboard_price_and_long_term():
+    data, a, b = synth_data(days=14)
+    an = m.analyze(data, CFG, a, b, TZ, base_load=2.0)
+    weeks = m.weekly_summary(an["all_days"], CFG)
+    an.pop("all_days")
+    an["agg"]["rooms"] = {"woonkamer": {"mean_dev": 1.2, "cold_h": 0, "warm_h": 30, "cold_home_frac": 0}}
+    rep = {"an": an, "text": "x", "cmp_pct": None, "proposal": None, "phase": "live"}
+    h = dashboard.page({"latest": rep, "history": [], "changes": [], "status": [], "live": {}, "cfg": CFG,
+                        "weeks": weeks, "price": 1.4, "opts": {}, "active": True})
+    assert "Langere termijn" in h and "Gaskosten" in h and "€" in h and "export.csv" in h

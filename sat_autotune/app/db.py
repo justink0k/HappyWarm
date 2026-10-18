@@ -18,6 +18,7 @@ class DB:
                 id INTEGER PRIMARY KEY, ts REAL, key TEXT, field TEXT, old TEXT, new TEXT,
                 source TEXT, reason TEXT, status TEXT, eval_ts REAL, baseline TEXT, result TEXT,
                 closed_ts REAL);
+            CREATE TABLE IF NOT EXISTS days(date TEXT PRIMARY KEY, data TEXT);
             CREATE TABLE IF NOT EXISTS snapshots(id INTEGER PRIMARY KEY, ts REAL, data TEXT);
             """
         )
@@ -32,6 +33,15 @@ class DB:
 
     def add_report(self, kind, data, ts=None):
         self.c.execute("INSERT INTO reports(ts,kind,data) VALUES(?,?,?)", (ts or time.time(), kind, json.dumps(data)))
+        self.c.commit()
+
+    def upsert_day(self, date, data):
+        self.c.execute("INSERT OR REPLACE INTO days VALUES(?,?)", (date, json.dumps(data)))
+
+    def days(self):
+        return [json.loads(r["data"]) for r in self.c.execute("SELECT data FROM days ORDER BY date")]
+
+    def commit(self):
         self.c.commit()
 
     def prune(self, kind, keep):

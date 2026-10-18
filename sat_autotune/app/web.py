@@ -6,7 +6,7 @@ from datetime import datetime
 
 from aiohttp import web
 
-from . import dashboard, tuner
+from . import dashboard, metrics, tuner
 from .const import ENT, LABELS, ROOMS
 from .ha_client import HAError
 
@@ -73,7 +73,8 @@ async def index(request):
         "latest": latest, "history": hist, "changes": _fmt_changes(eng), "status": status,
         "live": await _live(eng), "cfg": eng.cfg, "opts": eng.current_opts(eng.db.last_snapshot() or {}),
         "active": await eng.active(), "dry_run_end": dry_end,
-        "opv": eng.db.get("opv_seen"), "dhw_found": bool(eng.dhw), "report_ts": report_ts}))
+        "opv": eng.db.get("opv_seen"), "dhw_found": bool(eng.dhw), "report_ts": report_ts,
+        "weeks": metrics.weekly_summary(eng.db.days(), eng.cfg), "price": eng.cfg.get("gas_price_eur_per_m3") or 0}))
 
 
 async def refresh(request):
@@ -87,11 +88,25 @@ async def refresh(request):
     raise web.HTTPFound("./")
 
 
+async def export_csv(request):
+    eng = request.app["eng"]
+    if request.remote not in (INGRESS_IP, "127.0.0.1", "::1"):
+        return web.Response(status=403, text="Alleen via Home Assistant (Ingress)")
+    cols = ["date", "avg_out", "degree_days", "gas_m3", "gas_heating_m3", "boiler_m3", "dhw_m3", "ch_m3", "other_m3",
+            "starts", "burns", "mean_burn_min", "flow_mean", "flow_below55_frac", "pwm_frac", "away_frac", "valid"]
+    lines = [";".join(cols)]
+    for r in eng.db.days():
+        lines.append(";".join("" if r.get(c) is None else (f"{r[c]:.4f}".replace(".", ",") if isinstance(r[c], float) else str(r[c])) for c in cols))
+    return web.Response(text="\n".join(lines), content_type="text/csv",
+                        headers={"Content-Disposition": "attachment; filename=sat_autotune_dagen.csv"})
+
+
 async def start_web(eng):
     app = web.Application()
     app["eng"] = eng
     app.router.add_get("/", index)
     app.router.add_get("/refresh", refresh)
+    app.router.add_get("/export.csv", export_csv)
     runner = web.AppRunner(app)
     await runner.setup()
     await web.TCPSite(runner, "0.0.0.0", 8099).start()

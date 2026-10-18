@@ -95,6 +95,7 @@ class Engine:
             if not self.db.get("readonly_notified") == self.readonly_reason:
                 await self.push("SAT Autotune: alleen-lezen", f"Er wordt niets aangepast: {self.readonly_reason}")
                 self.db.set("readonly_notified", self.readonly_reason)
+        self.db.set("daily_ts", 0)  # direct na (her)start een verse analyse en archivering
         self.set_cons_params(self.db.last_snapshot() or {})
         try:
             cs = await self.ha.get_state(ENT["consumption_est"])
@@ -202,7 +203,21 @@ class Engine:
         base = await ha_data.estimate_base_load(self.ha, self.tz, self.cfg, today, self.db, self.dhw)
         cal_start = min(start, end - timedelta(days=27))  # gasverdeling kalibreren op max. 4 weken
         data = await ha_data.fetch(self.ha, self.tz, cal_start, end, self.dhw)
-        return m.analyze(data, self.cfg, start, end, self.tz, base, calib_start=cal_start), data
+        an = m.analyze(data, self.cfg, start, end, self.tz, base, calib_start=cal_start)
+        self.archive_days(an.pop("all_days", []))
+        return m.merge_archive(an, self.db.days(), self.cfg), data
+
+    def archive_days(self, rows):
+        """Bewaar volledige dagen in de eigen database, zodat ze het verlopen van de HA-geschiedenis overleven."""
+        today = datetime.now(self.tz).date().isoformat()
+        n = 0
+        for r in rows:
+            if r["date"] < today and m.usable(r):
+                self.db.upsert_day(r["date"], r)
+                n += 1
+        self.db.commit()
+        if n:
+            log.debug("%d dag(en) in het archief bijgewerkt", n)
 
     async def window(self, days):
         end = datetime.now(self.tz).date() - timedelta(days=1)
@@ -358,11 +373,20 @@ class Engine:
             if verdict == "keep":
                 self.db.update_change(ch["id"], status="kept", result={"reason": why, "agg": an["agg"]}, closed_ts=now)
                 self.db.set("last_change_ts", now)
-                await self.push("SAT Autotune: wijziging behouden", f"{LABELS.get(ch['key'])} blijft {ch['new']:g}. {why}")
+                await self.push("SAT Autotune: wijziging behouden", f"{LABELS.get(ch['key'])} blijft {ch['new']:g}. {why}{self.saving_text(ch['baseline'], an['agg'])}")
             else:
                 await self.revert(ch, why)
 
     # ------------------------------------------------------------ planning
+    def saving_text(self, base_agg, after_agg):
+        """Indicatie in euro's per jaar bij een gemiddeld stookseizoen (~2500 graaddagen)."""
+        price = self.cfg.get("gas_price_eur_per_m3") or 0
+        b, a = (base_agg or {}).get("gas_per_gd"), (after_agg or {}).get("gas_per_gd")
+        if not price or not b or a is None or a >= b:
+            return ""
+        m3 = (b - a) * 2500
+        return f" Ongeveer {m3:.0f} m³ (€ {m3 * price:.0f}) per jaar bij een gemiddeld stookseizoen."
+
     def report_due(self, now):
         h, mi = map(int, self.cfg["report_time"].split(":"))
         if WEEKDAYS[now.weekday()] != self.cfg["report_weekday"]:

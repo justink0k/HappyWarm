@@ -403,6 +403,7 @@ def analyze(data, cfg, start: date, end: date, tz: ZoneInfo, base_load=None, cal
         apply_calibration(all_days, cal)
     days = [r for r in all_days if r["date"] >= start.isoformat()]
     return {
+        "all_days": all_days,
         "calibration": cal,
         "start": start.isoformat(),
         "end": end.isoformat(),
@@ -523,3 +524,46 @@ def longest_cold_streak(room_series, setpoint, person, a, b, limit):
         else:
             cur, last_end = 0.0, None
     return best
+
+
+# ---------------------------------------------------------------- archief (eigen dagopslag)
+
+
+def usable(row):
+    """Heeft deze dag echte data (gas of buitentemperatuur)?"""
+    return row.get("gas_m3") is not None or row.get("avg_out") is not None
+
+
+def merge_archive(an, archive, cfg):
+    """Vul dagen zonder data uit HA (geschiedenis verlopen) aan met de eigen dagopslag."""
+    by = {r["date"]: r for r in archive}
+    an["days"] = [by[r["date"]] if (not usable(r) and r["date"] in by) else r for r in an["days"]]
+    an["agg"] = aggregate(an["days"], cfg)
+    an["warnings"] = warnings_for(an["days"], cfg, an.get("base_load_m3_per_day"))
+    return an
+
+
+def weekly_summary(rows, cfg):
+    """Archiefdagen -> weekoverzicht (ISO-weken), oudste eerst."""
+    weeks = {}
+    for r in rows:
+        y, w, _ = date.fromisoformat(r["date"]).isocalendar()
+        weeks.setdefault((y, w), []).append(r)
+    out = []
+    for (y, w), rs in sorted(weeks.items()):
+        valid = [r for r in rs if r.get("valid")]
+        gd = sum(r["degree_days"] for r in valid)
+        gas_days = [r["gas_m3"] for r in rs if r.get("gas_m3") is not None]
+        outs = [r["avg_out"] for r in rs if r.get("avg_out") is not None]
+        sts = [r["starts"] for r in rs if r.get("starts") is not None]
+        fl = [r["flow_mean"] for r in rs if r.get("flow_mean") is not None]
+        out.append({
+            "start": rs[0]["date"], "days": len(rs), "valid_days": len(valid),
+            "gas_total": sum(gas_days) if gas_days else None,
+            "gas_per_day": sum(gas_days) / len(gas_days) if gas_days else None,
+            "gas_per_gd": (sum(r["gas_heating_m3"] for r in valid) / gd) if valid and gd > 0 else None,
+            "avg_out": sum(outs) / len(outs) if outs else None,
+            "starts_per_day": sum(sts) / len(sts) if sts else None,
+            "flow_mean": sum(fl) / len(fl) if fl else None,
+        })
+    return out
