@@ -314,6 +314,10 @@ def recommendations(ctx):
     opts = ctx.get("opts") or {}
     cmp_pct = (latest or {}).get("cmp_pct")
 
+    if not ctx.get("price"):
+        r.append(("info", "Gasprijs nog niet ingevuld",
+                  "Daarom staan er nergens euro's op het dashboard.",
+                  "Vul 'gas_price_eur_per_m3' in de configuratie van de add-on in (je all-in prijs per m³, inclusief belasting en btw), bijvoorbeeld 1.40."))
     if not ctx.get("active"):
         r.append(("info", "Automatisch aanpassen staat uit",
                   "De schakelaar 'SAT Autotune actief' staat uit, dus de add-on meet en adviseert alleen.",
